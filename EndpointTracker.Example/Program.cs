@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// ENDPOINTRACKER
 // Register EndpointTracker service
 builder.Services.AddEndpointTracker();
 
@@ -20,6 +21,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// ENDPOINTRACKER
 // Add EndpointTracker middleware (must be after UseRouting, which is implicit with minimal APIs)
 app.UseEndpointTracker();
 
@@ -96,7 +98,9 @@ app.MapGet("/api/admin/settings", () =>
 .WithTags("Admin")
 .WithOpenApi();
 
+// ENDPOINTRACKER 
 // Map the endpoint tracker metrics routes
+// Remarks: Remove it if you want to not have metrics endpoints and use only the services
 app.MapEndpointTrackerMetrics();
 
 // Endpoints are automatically registered via the hosted service
