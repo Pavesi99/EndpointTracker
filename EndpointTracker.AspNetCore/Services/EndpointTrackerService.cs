@@ -4,7 +4,7 @@ using EndpointTracker.AspNetCore.Models;
 namespace EndpointTracker.AspNetCore.Services;
 
 /// <summary>
-/// Thread-safe service for tracking endpoint usage across the application.
+/// Thread-safe service for tracking endpoints usage across the application.
 /// </summary>
 public class EndpointTrackerService : IEndpointTrackerService
 {
@@ -78,7 +78,7 @@ public class EndpointTrackerService : IEndpointTrackerService
     /// <summary>
     /// Gets endpoints that have never been accessed.
     /// </summary>
-    /// <returns>A collection of unused endpoint information.</returns>
+    /// <returns>A collection of unused endpoints information.</returns>
     public IEnumerable<EndpointUsageInfo> GetUnusedEndpoints()
     {
         return _endpointUsage.Values
@@ -88,9 +88,9 @@ public class EndpointTrackerService : IEndpointTrackerService
     }
 
     /// <summary>
-    /// Gets comprehensive metrics about endpoint usage.
+    /// Gets comprehensive metrics about endpoints usage.
     /// </summary>
-    /// <returns>Endpoint metrics response.</returns>
+    /// <returns>Endpoints metrics response.</returns>
     public EndpointMetricsResponse GetMetrics()
     {
         var allEndpoints = GetAllEndpointUsage().ToList();

@@ -14,10 +14,10 @@ public static class ApplicationBuilderExtensions
 {
     /// <summary>
     /// Adds endpoint tracking middleware to the application pipeline.
-    /// Must be called after UseRouting() and before UseEndpoints().
     /// </summary>
     /// <param name="app">The application builder.</param>
     /// <returns>The application builder for chaining.</returns>
+    /// <remarks>Must be called after UseRouting() and before UseEndpoints()</remarks>
     public static IApplicationBuilder UseEndpointTracker(this IApplicationBuilder app)
     {
         if (app == null)
@@ -27,7 +27,13 @@ public static class ApplicationBuilderExtensions
 
         return app;
     }
-
+    /// <summary>
+    /// Map the endpoint tracker metrics routes
+    /// </summary>
+    /// <param name="endpoints"></param>
+    /// <param name="isAuthRequired"></param>
+    /// <remarks> Don`t use it if you don`t want to have metrics endpoints exposed and want to use only the services</remarks>
+    /// <exception cref="ArgumentNullException"></exception>
     public static IEndpointRouteBuilder MapEndpointTrackerMetrics(
     this IEndpointRouteBuilder endpoints,
     bool isAuthRequired = true)
