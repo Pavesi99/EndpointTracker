@@ -1,6 +1,7 @@
 using EndpointTracker.AspNetCore.Internal;
 using EndpointTracker.AspNetCore.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EndpointTracker.AspNetCore.Extensions;
 
@@ -20,7 +21,7 @@ public static class ServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         // Register the tracker service as a singleton to maintain state across requests
-        services.AddSingleton<IEndpointTrackerService, EndpointTrackerService>();
+        services.TryAddSingleton<IEndpointTrackerService, EndpointTrackerService>();
 
         // Register the hosted service that will register all endpoints at startup
         services.AddHostedService<EndpointRegistrationHostedService>();

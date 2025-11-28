@@ -12,6 +12,16 @@ public class EndpointTrackerService : IEndpointTrackerService
     private long _totalRequests;
 
     /// <summary>
+    /// Exposes current UTC time for extensibility/testing.
+    /// </summary>
+    protected virtual DateTime UtcNow => DateTime.UtcNow;
+
+    /// <summary>
+    /// Gives derived classes controlled access to the underlying store (if they need to fully customize RecordHitCore).
+    /// </summary>
+    protected ConcurrentDictionary<string, EndpointUsageInfo> EndpointUsage => _endpointUsage;
+
+    /// <summary>
     /// Registers an endpoint for tracking.
     /// </summary>
     /// <param name="endpointPattern">The endpoint route pattern.</param>
@@ -29,7 +39,7 @@ public class EndpointTrackerService : IEndpointTrackerService
             HttpMethod = httpMethod,
             HitCount = 0,
             LastAccessedUtc = null,
-            RegisteredUtc = DateTime.UtcNow
+            RegisteredUtc = UtcNow
         });
     }
 
@@ -37,29 +47,46 @@ public class EndpointTrackerService : IEndpointTrackerService
     /// Records a hit to an endpoint in a thread-safe manner.
     /// </summary>
     /// <param name="endpointPattern">The endpoint route pattern.</param>
-    public void RecordHit(string endpointPattern)
+
+    /// <summary>
+    /// Records a hit to an endpoint in a thread-safe manner.
+    /// Override <see cref="RecordHitCore"/> if you want to customize hit behavior while preserving built-in bookkeeping.
+    /// </summary>
+    public virtual void RecordHit(string endpointPattern)
     {
         if (string.IsNullOrWhiteSpace(endpointPattern))
             return;
 
         Interlocked.Increment(ref _totalRequests);
+        RecordHitCore(endpointPattern, UtcNow);
+    }
 
-        _endpointUsage.AddOrUpdate(
+    /// <summary>
+    /// Extensibility point: override this to implement your own hit-recording logic
+    /// while keeping the service's other metrics methods unchanged.
+    /// </summary>
+    protected virtual EndpointUsageInfo RecordHitCore(string endpointPattern, DateTime nowUtc)
+    {
+        // NOTE: Avoid mutating "existing" inside AddOrUpdate delegate (the delegate may run multiple times).
+        return _endpointUsage.AddOrUpdate(
             endpointPattern,
             // Add new endpoint if not registered (fallback)
             key => new EndpointUsageInfo
             {
                 EndpointPattern = key,
                 HitCount = 1,
-                LastAccessedUtc = DateTime.UtcNow,
-                RegisteredUtc = DateTime.UtcNow
+                LastAccessedUtc = nowUtc,
+                RegisteredUtc = nowUtc
             },
-            // Update existing endpoint
-            (key, existing) =>
+            // Update existing endpoint (return a new instance to keep delegate side-effect free)
+            (key, existing) => new EndpointUsageInfo
             {
-                existing.HitCount++;
-                existing.LastAccessedUtc = DateTime.UtcNow;
-                return existing;
+                EndpointPattern = existing.EndpointPattern,
+                DisplayName = existing.DisplayName,
+                HttpMethod = existing.HttpMethod,
+                RegisteredUtc = existing.RegisteredUtc,
+                HitCount = existing.HitCount + 1,
+                LastAccessedUtc = nowUtc
             });
     }
 
