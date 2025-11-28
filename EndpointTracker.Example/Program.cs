@@ -1,4 +1,6 @@
 using EndpointTracker.AspNetCore.Extensions;
+using EndpointTracker.AspNetCore.Services;
+using EndpointTracker.Example;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,9 +9,12 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // ENDPOINTRACKER
+// Register first your custom implementation if you want to use one
+// builder.Services.AddSingleton<IEndpointTrackerService, CustomEndpointTrackerService>();
+
+// ENDPOINTRACKER
 // Register EndpointTracker service
 builder.Services.AddEndpointTracker();
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
