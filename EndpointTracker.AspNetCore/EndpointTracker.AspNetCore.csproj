@@ -8,13 +8,13 @@
     <!-- NuGet Package Metadata -->
     <PackageId>EndpointTracker.AspNetCore</PackageId>
     <Version>1.0.0</Version>
-    <Authors>Your Name</Authors>
-    <Company>Your Company</Company>
+    <Authors>Vilmar Pavesi</Authors>
+    <Company>Vilmar Pavesi</Company>
     <Description>ASP.NET Core middleware for tracking API endpoint usage, hit counts, and identifying unused endpoints. Production-ready solution for monitoring endpoint analytics.</Description>
     <PackageTags>aspnetcore;middleware;endpoint-tracking;metrics;monitoring;analytics</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/yourusername/EndpointTracker.AspNetCore</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/yourusername/EndpointTracker.AspNetCore</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Pavesi99/EndpointTracker</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/Pavesi99/EndpointTracker</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
