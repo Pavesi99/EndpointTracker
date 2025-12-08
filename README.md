@@ -221,5 +221,3 @@ app.MapGet("/metrics/export", (IEndpointTrackerService tracker) =>
 ## 🛡️ License & Support
 - MIT License
 - Questions? Open an issue in this repository
-
-Happy tracking! 🎉
