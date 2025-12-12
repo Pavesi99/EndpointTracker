@@ -13,7 +13,7 @@ permissions:
 env:
   DOTNET_VERSION: "8.0.x"
   CONFIGURATION: Release
-  PROJECT_PATH: src/YourProject/YourProject.csproj
+  PROJECT_PATH: ./EndpointTracker.AspNetCore/EndpointTracker.AspNetCore.csproj
 
 jobs:
   ci:
