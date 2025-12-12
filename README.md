@@ -155,36 +155,6 @@ curl http://localhost:5000/metrics/unused
 ```
 
 ---
-
-## 📤 Building & Publishing the NuGet Package
-
-### 1. Pack
-```bash
-cd EndpointTracker.AspNetCore
-dotnet pack -c Release -o ./nupkg
-```
-
-### 2. Publish to NuGet.org
-```bash
-# Acquire an API key from https://www.nuget.org/account/apikeys
-dotnet nuget push ./nupkg/EndpointTracker.AspNetCore.1.0.0.nupkg \
-  --api-key YOUR_API_KEY \
-  --source https://api.nuget.org/v3/index.json
-```
-
-### 3. Publish symbols (optional)
-```bash
-dotnet nuget push ./nupkg/EndpointTracker.AspNetCore.1.0.0.snupkg \
-  --api-key YOUR_API_KEY \
-  --source https://api.nuget.org/v3/index.json
-```
-
-### 4. Versioning
-- Follow [Semantic Versioning](https://semver.org/)
-- Update `<Version>` inside `EndpointTracker.AspNetCore.csproj`
-
----
-
 ## ⚙️ Production Considerations
 - Secure metrics endpoints (authorization, firewall rules)
 - Default storage is in-memory per instance; implement a custom `IEndpointTrackerService` (Redis, SQL, etc.) for distributed systems
