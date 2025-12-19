@@ -1,12 +1,12 @@
 using EndpointTracker.AspNetCore.Extensions;
-using EndpointTracker.AspNetCore.Services;
-using EndpointTracker.Example;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
 
 // ENDPOINTRACKER
 // Register first your custom implementation if you want to use one
@@ -23,7 +23,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseHttpsRedirection();
 
 // ENDPOINTRACKER
@@ -106,7 +107,7 @@ app.MapGet("/api/admin/settings", () =>
 // ENDPOINTRACKER 
 // Map the endpoint tracker metrics routes
 // Remarks: Remove it if you want to not have metrics endpoints and use only the services
-app.MapEndpointTrackerMetrics();
+app.MapEndpointTrackerMetrics(isAuthRequired: false);
 
 // Endpoints are automatically registered via the hosted service
 

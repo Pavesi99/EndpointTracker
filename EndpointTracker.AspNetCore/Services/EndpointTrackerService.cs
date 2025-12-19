@@ -47,7 +47,6 @@ public class EndpointTrackerService : IEndpointTrackerService
     /// Records a hit to an endpoint in a thread-safe manner.
     /// </summary>
     /// <param name="endpointPattern">The endpoint route pattern.</param>
-
     /// <summary>
     /// Records a hit to an endpoint in a thread-safe manner.
     /// Override <see cref="RecordHitCore"/> if you want to customize hit behavior while preserving built-in bookkeeping.
