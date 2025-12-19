@@ -7,7 +7,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>EndpointTracker.AspNetCore</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.2</Version>
     <Authors>Vilmar Pavesi</Authors>
     <Company>Vilmar Pavesi</Company>
     <Description>ASP.NET Core middleware for tracking API endpoint usage, hit counts, and identifying unused endpoints. Production-ready solution for monitoring endpoint analytics.</Description>

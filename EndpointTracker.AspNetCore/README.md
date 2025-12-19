@@ -258,4 +258,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Support
 
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/yourusername/EndpointTracker.AspNetCore).
+For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/yourusername/EndpointTracker).
