@@ -6,6 +6,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.AspNetCore"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.Example", "EndpointTracker.Example\EndpointTracker.Example.csproj", "{1B235A38-7A77-46F1-8D21-30AB478EA932}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.Dashboard", "EndpointTracker.Dashboard\EndpointTracker.Dashboard.csproj", "{04F46E61-3A44-4AB7-8D4C-6BDFAF019DD5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{1B235A38-7A77-46F1-8D21-30AB478EA932}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1B235A38-7A77-46F1-8D21-30AB478EA932}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1B235A38-7A77-46F1-8D21-30AB478EA932}.Release|Any CPU.Build.0 = Release|Any CPU
+		{04F46E61-3A44-4AB7-8D4C-6BDFAF019DD5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{04F46E61-3A44-4AB7-8D4C-6BDFAF019DD5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{04F46E61-3A44-4AB7-8D4C-6BDFAF019DD5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{04F46E61-3A44-4AB7-8D4C-6BDFAF019DD5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
