@@ -236,17 +236,35 @@ app.MapGet("/metrics/prometheus", (IEndpointTrackerService tracker) =>
 });
 ```
 
+## Redis Support
+
+For complete Redis documentation (quick start, configuration, troubleshooting, and more), see **[REDIS.md](REDIS.md)**.
+
+### Quick Example
+
+```csharp
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddEndpointTrackerRedis(redis);
+```
+
+That's it! Your metrics are now distributed across instances and persistent in Redis.
+
+For all details, see [REDIS.md](REDIS.md).
+
 ## Best Practices
 
 1. **Call `UseEndpointTrackerRegistration()` last** - After all `MapX()` calls to ensure all endpoints are registered
 2. **Secure metrics endpoints** - Add authentication/authorization in production
 3. **Monitor unused endpoints** - Regularly review unused endpoints for potential removal
-4. **Consider distributed scenarios** - For multi-instance deployments, consider exporting to centralized storage
+4. **Consider distributed scenarios** - For multi-instance deployments, use Redis support
+5. **Tune flush interval** - For high-traffic applications, adjust `FlushIntervalMs` (lower for more frequent updates, higher to reduce Redis load)
+6. **Redis persistence** - Enable Redis AOF or RDB persistence if you want metrics to survive Redis restarts
 
 ## Requirements
 
 - .NET 8.0 or higher
 - ASP.NET Core 8.0
+- StackExchange.Redis 2.7+ (only required for Redis mode)
 
 ## License
 
