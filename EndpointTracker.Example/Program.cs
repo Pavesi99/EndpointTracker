@@ -1,4 +1,5 @@
 using EndpointTracker.AspNetCore.Extensions;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,7 +15,9 @@ builder.Services.AddAuthorization();
 
 // ENDPOINTRACKER
 // Register EndpointTracker service
-builder.Services.AddEndpointTracker();
+//builder.Services.AddEndpointTracker();
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddEndpointTrackerRedis(redis);
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
