@@ -1,36 +1,36 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
 
-    <!-- NuGet Package Metadata -->
-    <PackageId>EndpointTracker.AspNetCore</PackageId>
-    <Version>1.0.2</Version>
-    <Authors>Vilmar Pavesi</Authors>
-    <Company>Vilmar Pavesi</Company>
-    <Description>ASP.NET Core middleware for tracking API endpoint usage, hit counts, and identifying unused endpoints. Production-ready solution for monitoring endpoint analytics.</Description>
-    <PackageTags>aspnetcore;middleware;endpoint-tracking;metrics;monitoring;analytics</PackageTags>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/Pavesi99/EndpointTracker</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/Pavesi99/EndpointTracker</PackageProjectUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IncludeSymbols>true</IncludeSymbols>
-    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-  </PropertyGroup>
+        <!-- NuGet Package Metadata -->
+        <PackageId>EndpointTracker.AspNetCore</PackageId>
+        <Version>1.0.5</Version>
+        <Authors>Vilmar Pavesi</Authors>
+        <Company>Vilmar Pavesi</Company>
+        <Description>ASP.NET Core middleware for tracking API endpoint usage, hit counts, and identifying unused endpoints. Production-ready solution for monitoring endpoint analytics.</Description>
+        <PackageTags>aspnetcore;middleware;endpoint-tracking;metrics;monitoring;analytics</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <RepositoryUrl>https://github.com/Pavesi99/EndpointTracker</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/Pavesi99/EndpointTracker</PackageProjectUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-  </ItemGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="StackExchange.Redis" Version="2.7.27" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
+    </ItemGroup>
 
-  <ItemGroup>
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
+    <ItemGroup>
+        <None Include="README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
 
 </Project>
