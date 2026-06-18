@@ -17,6 +17,9 @@
 # Mono auto generated files
 mono_crash.*
 
+# Generated files and artifacts
+_bmad-output/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
