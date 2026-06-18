@@ -14,10 +14,22 @@ builder.Services.AddAuthorization();
 // builder.Services.AddSingleton<IEndpointTrackerService, CustomEndpointTrackerService>();
 
 // ENDPOINTRACKER
-// Register EndpointTracker service
-//builder.Services.AddEndpointTracker();
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddEndpointTrackerRedis(redis);
+// Register EndpointTracker service with optional SQL persistence via configuration
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+var redis = ConnectionMultiplexer.Connect(redisConnectionString);
+
+builder.Services.AddEndpointTracker(options =>
+{
+    options.UseRedis = true;
+    options.RedisConnection = redis;
+    options.RedisDatabase = int.Parse(builder.Configuration["EndpointTracker:RedisDatabase"] ?? "0");
+    options.RedisKeyPrefix = builder.Configuration["EndpointTracker:RedisKeyPrefix"] ?? "endpoint-tracker:";
+    options.UseSqlPersistence = bool.Parse(builder.Configuration["EndpointTracker:UseSqlPersistence"] ?? "false");
+    options.SqlProvider = builder.Configuration["EndpointTracker:SqlProvider"];
+    options.SqlConnectionString = builder.Configuration["EndpointTracker:SqlConnectionString"];
+    options.SqlPersistIntervalMinutes = int.Parse(builder.Configuration["EndpointTracker:SqlPersistIntervalMinutes"] ?? "10");
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

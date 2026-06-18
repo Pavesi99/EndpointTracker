@@ -36,4 +36,33 @@ public class EndpointTrackerOptions
     /// Default is "endpoint-tracker:".
     /// </summary>
     public string RedisKeyPrefix { get; set; } = "endpoint-tracker:";
+
+    /// <summary>
+    /// Gets or sets a value indicating whether SQL persistence is enabled.
+    /// When enabled, Redis metrics are periodically persisted to SQL.
+    /// </summary>
+    public bool UseSqlPersistence { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets the SQL provider name used for SQL persistence.
+    /// Supported values are "SqlServer" and "PostgreSQL".
+    /// </summary>
+    public string? SqlProvider { get; set; }
+
+    /// <summary>
+    /// Gets or sets the SQL connection string used for SQL persistence.
+    /// Required when UseSqlPersistence is true.
+    /// </summary>
+    public string? SqlConnectionString { get; set; }
+
+    /// <summary>
+    /// Gets or sets how often to persist Redis metrics to SQL, in minutes.
+    /// Default is 10 minutes.
+    /// </summary>
+    public int SqlPersistIntervalMinutes { get; set; } = 10;
+
+    /// <summary>
+    /// Gets or sets the SQL table name used for persisted endpoint metrics.
+    /// </summary>
+    public string SqlTableName { get; set; } = "EndpointTrackerMetrics";
 }

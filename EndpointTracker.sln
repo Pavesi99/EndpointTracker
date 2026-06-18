@@ -6,6 +6,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.AspNetCore"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.Example", "EndpointTracker.Example\EndpointTracker.Example.csproj", "{1B235A38-7A77-46F1-8D21-30AB478EA932}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EndpointTracker.Tests", "EndpointTracker.Tests\EndpointTracker.Tests.csproj", "{553FB2EC-13DA-4A73-B48C-B2402E924113}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU

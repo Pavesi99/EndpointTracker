@@ -27,6 +27,8 @@
 
     <ItemGroup>
         <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
+        <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+        <PackageReference Include="Npgsql" Version="7.1.2" />
     </ItemGroup>
 
     <ItemGroup>

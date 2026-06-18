@@ -18,7 +18,9 @@
 mono_crash.*
 
 # Generated files and artifacts
+_bmad/
 _bmad-output/
+.agents/
 
 # Build results
 [Dd]ebug/

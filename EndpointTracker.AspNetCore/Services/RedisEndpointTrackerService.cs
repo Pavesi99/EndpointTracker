@@ -15,6 +15,7 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
     private readonly IDatabase _redisDb;
     private readonly string _keyPrefix;
     private readonly ILogger<RedisEndpointTrackerService> _logger;
+    private readonly SqlPersistenceStore? _sqlPersistenceStore;
     
     // In-memory buffer for hit counts before flushing to Redis
     private readonly ConcurrentDictionary<string, long> _hitBuffer = new();
@@ -37,11 +38,13 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
     public RedisEndpointTrackerService(
         IConnectionMultiplexer redisConnection,
         EndpointTrackerOptions options,
+        SqlPersistenceStore? sqlPersistenceStore,
         ILogger<RedisEndpointTrackerService> logger)
     {
         _redisConnection = redisConnection ?? throw new ArgumentNullException(nameof(redisConnection));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _keyPrefix = (options?.RedisKeyPrefix ?? "endpoint-tracker:").TrimEnd(':') + ":";
+        _sqlPersistenceStore = sqlPersistenceStore;
         
         _redisDb = _redisConnection.GetDatabase(options?.RedisDatabase ?? 0);
         
@@ -100,30 +103,69 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
     /// </summary>
     public IEnumerable<EndpointUsageInfo> GetAllEndpointUsage()
     {
-        var results = new List<EndpointUsageInfo>();
-
-        foreach (var endpointPattern in _endpointMetadata.Keys)
+        if (_sqlPersistenceStore == null)
         {
-            if (_endpointMetadata.TryGetValue(endpointPattern, out var metadata))
+            var results = new List<EndpointUsageInfo>();
+
+            foreach (var endpointPattern in _endpointMetadata.Keys)
             {
-                var hitCount = GetHitCountFromBuffer(endpointPattern);
-                var lastAccessed = GetLastAccessedFromRedis(endpointPattern);
-
-                var usage = new EndpointUsageInfo
+                if (_endpointMetadata.TryGetValue(endpointPattern, out var metadata))
                 {
-                    EndpointPattern = metadata.EndpointPattern,
-                    DisplayName = metadata.DisplayName,
-                    HttpMethod = metadata.HttpMethod,
-                    HitCount = hitCount,
-                    LastAccessedUtc = lastAccessed,
-                    RegisteredUtc = metadata.RegisteredUtc
-                };
+                    var hitCount = GetHitCountFromBuffer(endpointPattern);
+                    var lastAccessed = GetLastAccessedFromRedis(endpointPattern);
 
-                results.Add(usage);
+                    var usage = new EndpointUsageInfo
+                    {
+                        EndpointPattern = metadata.EndpointPattern,
+                        DisplayName = metadata.DisplayName,
+                        HttpMethod = metadata.HttpMethod,
+                        HitCount = hitCount,
+                        LastAccessedUtc = lastAccessed,
+                        RegisteredUtc = metadata.RegisteredUtc
+                    };
+
+                    results.Add(usage);
+                }
             }
+
+            return results
+                .OrderByDescending(e => e.HitCount)
+                .ThenBy(e => e.EndpointPattern)
+                .ToList();
         }
 
-        return results
+        var sqlUsageLookup = _sqlPersistenceStore.GetAllEndpointUsage()
+            .ToDictionary(x => x.EndpointPattern, StringComparer.Ordinal);
+
+        var allPatterns = new HashSet<string>(_endpointMetadata.Keys, StringComparer.Ordinal);
+        allPatterns.UnionWith(sqlUsageLookup.Keys);
+
+        var mergedResults = new List<EndpointUsageInfo>();
+
+        foreach (var endpointPattern in allPatterns)
+        {
+            _endpointMetadata.TryGetValue(endpointPattern, out var redisMetadata);
+            sqlUsageLookup.TryGetValue(endpointPattern, out var sqlUsage);
+
+            var liveHitCount = GetRedisHitCount(endpointPattern);
+            var persistedHitCount = sqlUsage?.HitCount ?? 0;
+            var totalHitCount = persistedHitCount + liveHitCount;
+
+            var lastAccessedUtc = HighestDateTime(sqlUsage?.LastAccessedUtc, GetLastAccessedFromRedis(endpointPattern), redisMetadata?.LastAccessedUtc);
+            var registeredUtc = redisMetadata?.RegisteredUtc ?? sqlUsage?.RegisteredUtc ?? UtcNow;
+
+            mergedResults.Add(new EndpointUsageInfo
+            {
+                EndpointPattern = endpointPattern,
+                DisplayName = redisMetadata?.DisplayName ?? sqlUsage?.DisplayName,
+                HttpMethod = redisMetadata?.HttpMethod ?? sqlUsage?.HttpMethod,
+                HitCount = totalHitCount,
+                LastAccessedUtc = lastAccessedUtc,
+                RegisteredUtc = registeredUtc
+            });
+        }
+
+        return mergedResults
             .OrderByDescending(e => e.HitCount)
             .ThenBy(e => e.EndpointPattern)
             .ToList();
@@ -181,6 +223,28 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to reset Redis data");
+        }
+    }
+
+    /// <summary>
+    /// Clears all persisted Redis data, including hit counts and metadata.
+    /// </summary>
+    public void ClearRedisData()
+    {
+        try
+        {
+            var keysToDelete = _redisDb.HashKeys(_keyPrefix + EndpointHashKey);
+            foreach (var key in keysToDelete)
+            {
+                _redisDb.KeyDelete(_keyPrefix + HitCountKeyFormat.Replace("{0}", key.ToString()));
+                _redisDb.KeyDelete(_keyPrefix + LastAccessedKeyFormat.Replace("{0}", key.ToString()));
+            }
+            _redisDb.KeyDelete(_keyPrefix + EndpointHashKey);
+            _hitBuffer.Clear();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear Redis data");
         }
     }
 
@@ -246,6 +310,27 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
             _logger.LogError(ex, "Failed to get hit count for {EndpointPattern}", endpointPattern);
             return 0;
         }
+    }
+
+    private int GetRedisHitCount(string endpointPattern)
+    {
+        try
+        {
+            var bufferHits = _hitBuffer.TryGetValue(endpointPattern, out var hits) ? hits : 0;
+            var redisValue = _redisDb.StringGet(_keyPrefix + HitCountKeyFormat.Replace("{0}", endpointPattern));
+            var redisHits = redisValue.IsNull ? 0 : int.Parse(redisValue.ToString());
+            return (int)(bufferHits + redisHits);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get Redis hit count for {EndpointPattern}", endpointPattern);
+            return 0;
+        }
+    }
+
+    private static DateTime? HighestDateTime(params DateTime?[] values)
+    {
+        return values.Where(x => x.HasValue).Select(x => x!.Value).DefaultIfEmpty().Max();
     }
 
     private DateTime? GetLastAccessedFromRedis(string endpointPattern)
