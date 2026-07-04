@@ -59,12 +59,32 @@ public static class ServiceCollectionExtensions
                     "RedisConnection must be provided when UseRedis is true. " +
                     "Configure it in the options: options.RedisConnection = connectionMultiplexer;");
 
+            if (options.UseSqlPersistence)
+            {
+                if (string.IsNullOrWhiteSpace(options.SqlProvider))
+                    throw new InvalidOperationException(
+                        "SqlProvider must be configured when UseSqlPersistence is true.");
+
+                if (string.IsNullOrWhiteSpace(options.SqlConnectionString))
+                    throw new InvalidOperationException(
+                        "SqlConnectionString must be configured when UseSqlPersistence is true.");
+
+                services.TryAddSingleton<SqlPersistenceStore>();
+                services.AddHostedService<SqlPersistenceHostedService>();
+            }
+
             services.TryAddSingleton(options.RedisConnection);
             services.TryAddSingleton<IEndpointTrackerService, RedisEndpointTrackerService>();
             services.AddHostedService<RedisFlushHostedService>();
         }
         else
         {
+            if (options.UseSqlPersistence)
+            {
+                throw new InvalidOperationException(
+                    "SQL persistence is only supported in combination with Redis storage.");
+            }
+
             services.TryAddSingleton<IEndpointTrackerService, EndpointTrackerService>();
         }
 
@@ -96,7 +116,22 @@ public static class ServiceCollectionExtensions
         configureOptions?.Invoke(options);
 
         services.TryAddSingleton(options);
-        services.TryAddSingleton(redisConnection);
+        services.TryAddSingleton(options.RedisConnection);
+
+        if (options.UseSqlPersistence)
+        {
+            if (string.IsNullOrWhiteSpace(options.SqlProvider))
+                throw new InvalidOperationException(
+                    "SqlProvider must be configured when UseSqlPersistence is true.");
+
+            if (string.IsNullOrWhiteSpace(options.SqlConnectionString))
+                throw new InvalidOperationException(
+                    "SqlConnectionString must be configured when UseSqlPersistence is true.");
+
+            services.TryAddSingleton<SqlPersistenceStore>();
+            services.AddHostedService<SqlPersistenceHostedService>();
+        }
+
         services.TryAddSingleton<IEndpointTrackerService, RedisEndpointTrackerService>();
         services.AddHostedService<RedisFlushHostedService>();
         services.AddHostedService<EndpointRegistrationHostedService>();
