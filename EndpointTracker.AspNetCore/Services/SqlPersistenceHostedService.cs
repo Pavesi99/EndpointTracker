@@ -4,92 +4,130 @@ using Microsoft.Extensions.Logging;
 
 namespace EndpointTracker.AspNetCore.Services;
 
-internal class SqlPersistenceHostedService : IHostedService, IDisposable
+internal sealed class SqlPersistenceHostedService : BackgroundService
 {
     private readonly RedisEndpointTrackerService _redisTrackerService;
     private readonly SqlPersistenceStore _sqlPersistenceStore;
     private readonly EndpointTrackerOptions _options;
     private readonly ILogger<SqlPersistenceHostedService> _logger;
-    private Timer? _persistTimer;
+    private readonly SemaphoreSlim _persistenceLock = new(1, 1);
 
     public SqlPersistenceHostedService(
-        IEndpointTrackerService trackerService,
+        RedisEndpointTrackerService redisTrackerService,
         SqlPersistenceStore sqlPersistenceStore,
         EndpointTrackerOptions options,
         ILogger<SqlPersistenceHostedService> logger)
     {
-        if (trackerService is not RedisEndpointTrackerService redisTracker)
-        {
-            throw new InvalidOperationException(
-                "SqlPersistenceHostedService can only be used with RedisEndpointTrackerService.");
-        }
-
-        _redisTrackerService = redisTracker;
+        _redisTrackerService = redisTrackerService ?? throw new ArgumentNullException(nameof(redisTrackerService));
         _sqlPersistenceStore = sqlPersistenceStore ?? throw new ArgumentNullException(nameof(sqlPersistenceStore));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            _sqlPersistenceStore.EnsureTableExists();
-            _logger.LogInformation("SqlPersistenceHostedService ensured persistence table exists.");
-
-            PersistToSql();
-
-            var intervalMinutes = Math.Max(_options.SqlPersistIntervalMinutes, 1);
-            _persistTimer = new Timer(
-                _ => PersistToSql(),
-                null,
-                TimeSpan.FromMinutes(intervalMinutes),
-                TimeSpan.FromMinutes(intervalMinutes));
-
-            _logger.LogInformation("SqlPersistenceHostedService started with interval of {IntervalMinutes} minute(s).", intervalMinutes);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to start SQL persistence host service.");
-        }
-
-        return Task.CompletedTask;
+        await _sqlPersistenceStore.EnsureTableExistsAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("SQL persistence tables are ready.");
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("SqlPersistenceHostedService stopping. Persisting final metrics.");
-        PersistToSql();
-        _persistTimer?.Dispose();
-        return Task.CompletedTask;
+        await PersistPendingMetricsAsync(stoppingToken).ConfigureAwait(false);
+
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(_options.SqlPersistIntervalMinutes));
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+            await PersistPendingMetricsAsync(stoppingToken).ConfigureAwait(false);
     }
 
-    private void PersistToSql()
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("SQL persistence is stopping. Persisting final metrics.");
+        await PersistPendingMetricsAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task PersistPendingMetricsAsync(CancellationToken cancellationToken)
+    {
+        if (!await _persistenceLock.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogDebug("Skipping SQL persistence because another persistence operation is still active.");
+            return;
+        }
+
         try
         {
-            _redisTrackerService.FlushHitBuffer();
-            var endpointUsage = _redisTrackerService.GetAllEndpointUsage().ToList();
+            await using var lease = await _redisTrackerService
+                .AcquireSqlPersistenceLeaseAsync(cancellationToken)
+                .ConfigureAwait(false);
+            using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                lease.LeaseLostToken);
+            var operationToken = operationCancellation.Token;
 
-            if (!endpointUsage.Any())
+            var batches = await _redisTrackerService
+                .PreparePersistenceBatchesAsync(operationToken)
+                .ConfigureAwait(false);
+
+            foreach (var batch in batches)
             {
-                _logger.LogDebug("No endpoint usage metrics available to persist to SQL.");
-                return;
+                operationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var applied = await _sqlPersistenceStore
+                        .PersistEndpointUsageBatchFencedAsync(
+                            batch.BatchId,
+                            batch.EndpointUsage,
+                            lease.FenceToken,
+                            operationToken)
+                        .ConfigureAwait(false);
+
+                    lease.ThrowIfLeaseLost();
+                    await _redisTrackerService
+                        .CompletePersistenceBatchAsync(batch.BatchId, operationToken)
+                        .ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                        applied
+                            ? "Persisted Redis batch {BatchId} containing {EndpointCount} endpoint metrics to SQL."
+                            : "Redis batch {BatchId} was already persisted; completed Redis cleanup.",
+                        batch.BatchId,
+                        batch.EndpointUsage.Count);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is ArgumentException or OverflowException)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Redis batch {BatchId} contains data that SQL persistence cannot accept. " +
+                        "It remains readable in Redis; later batches will still be processed.",
+                        batch.BatchId);
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "Failed to persist Redis batch {BatchId}. It remains in Redis and will be retried.",
+                        batch.BatchId);
+                    break;
+                }
             }
-
-            _sqlPersistenceStore.PersistEndpointUsage(endpointUsage);
-            _redisTrackerService.ClearRedisData();
-
-            _logger.LogInformation("Persisted {EndpointCount} endpoint metrics to SQL and cleared Redis data.", endpointUsage.Count);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal host shutdown.
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to persist endpoint metrics to SQL.");
+            _logger.LogError(ex, "Failed to prepare Redis metrics for SQL persistence. Data remains available for retry.");
         }
-    }
-
-    public void Dispose()
-    {
-        _persistTimer?.Dispose();
+        finally
+        {
+            _persistenceLock.Release();
+        }
     }
 }
