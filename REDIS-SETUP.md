@@ -1,70 +1,39 @@
-# EndpointTracker - Redis Support Implementation Complete
+# Local Redis setup
 
-## ? What You Need to Know
+Start a low-memory Redis container:
 
-This repository now has **Redis-backed endpoint tracking** with a single, comprehensive documentation file.
+~~~bash
+docker run --detach \
+  --name endpointtracker-redis \
+  --publish 6379:6379 \
+  --memory 128m \
+  redis:7-alpine
 
-## ?? Documentation
+docker exec endpointtracker-redis redis-cli ping
+~~~
 
-**? See [EndpointTracker.AspNetCore/REDIS.md](EndpointTracker.AspNetCore/REDIS.md) for everything**
+EndpointTracker supports standalone Redis and Sentinel-managed Redis. Redis Cluster is not supported because durable transfers use atomic scripts across multiple keys; a cluster connection is rejected when the tracker is created.
 
-The REDIS.md file contains:
-- ? Quick start (5 minutes)
-- ?? 5 different configuration methods
-- ?? Complete how-it-works explanation
-- ??? Architecture and design
-- ?? Redis schema documentation
-- ?? Error handling and troubleshooting
-- ?? Multi-instance setup
-- ?? Performance tuning
-- ? Production checklist
+Configure EndpointTracker:
 
-## ?? Quick Start
-
-### 1. Start Redis
-```bash
-docker run -d -p 6379:6379 redis
-```
-
-### 2. Update Program.cs
-```csharp
-using StackExchange.Redis;
+~~~csharp
 using EndpointTracker.AspNetCore.Extensions;
+using StackExchange.Redis;
 
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
+var redis = ConnectionMultiplexer.Connect(
+    builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Redis is not configured."));
+
 builder.Services.AddEndpointTrackerRedis(redis);
-```
+~~~
 
-### 3. Done! ?
-```bash
-curl http://localhost:5000/metrics/endpoints
-```
+Then add the middleware and metrics routes:
 
-## ?? Full Documentation
+~~~csharp
+app.UseEndpointTracker();
+app.MapEndpointTrackerMetrics(isAuthRequired: false); // local setup only
+~~~
 
-?? **[EndpointTracker.AspNetCore/REDIS.md](EndpointTracker.AspNetCore/REDIS.md)**
+Metrics routes require authorization by default. This local setup disables it only so the sample can run without an authentication scheme.
 
-Everything you need is in this single file:
-- Getting started
-- Configuration examples
-- How it works
-- Troubleshooting
-- Production deployment
-
-## ?? Key Features
-
-? **Distributed Metrics** - Shared across instances  
-? **Persistent** - Survives restarts  
-? **Non-blocking** - Zero latency impact on requests  
-? **Graceful** - Works even if Redis is down  
-? **Configurable** - Multiple setup options  
-? **Production Ready** - Full error handling  
-
-## ?? Main Documentation
-
-- **[EndpointTracker.AspNetCore/README.md](EndpointTracker.AspNetCore/README.md)** - Main docs
-- **[EndpointTracker.AspNetCore/REDIS.md](EndpointTracker.AspNetCore/REDIS.md)** - Redis setup and reference
-
----
-
-**Status**: ? Complete and Production Ready
+See [the complete Redis guide](EndpointTracker.AspNetCore/REDIS.md) for configuration, multi-instance behavior, troubleshooting, and SQL persistence.

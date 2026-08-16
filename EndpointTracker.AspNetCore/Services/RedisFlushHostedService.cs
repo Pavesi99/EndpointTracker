@@ -5,69 +5,54 @@ using Microsoft.Extensions.Logging;
 namespace EndpointTracker.AspNetCore.Services;
 
 /// <summary>
-/// Background hosted service that flushes the Redis endpoint tracker's hit buffer at regular intervals.
+/// Periodically flushes the in-memory hit buffer to Redis.
 /// </summary>
-internal class RedisFlushHostedService : IHostedService
+internal sealed class RedisFlushHostedService : BackgroundService
 {
     private readonly RedisEndpointTrackerService _trackerService;
     private readonly EndpointTrackerOptions _options;
     private readonly ILogger<RedisFlushHostedService> _logger;
-    private Timer? _flushTimer;
 
     public RedisFlushHostedService(
-        IEndpointTrackerService trackerService,
+        RedisEndpointTrackerService trackerService,
         EndpointTrackerOptions options,
         ILogger<RedisFlushHostedService> logger)
     {
-        if (!(trackerService is RedisEndpointTrackerService redisTracker))
-        {
-            throw new InvalidOperationException(
-                "RedisFlushHostedService can only be used with RedisEndpointTrackerService");
-        }
-
-        _trackerService = redisTracker;
+        _trackerService = trackerService ?? throw new ArgumentNullException(nameof(trackerService));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var flushInterval = Math.Max(_options.FlushIntervalMs, 100); // Minimum 100ms
-        
-        _flushTimer = new Timer(
-            _ => FlushBuffer(),
-            null,
-            TimeSpan.FromMilliseconds(flushInterval),
-            TimeSpan.FromMilliseconds(flushInterval));
-
-        _logger.LogInformation(
-            "RedisFlushHostedService started with flush interval of {FlushIntervalMs}ms",
-            flushInterval);
-
-        return Task.CompletedTask;
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(_options.FlushIntervalMs));
+        while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+        {
+            try
+            {
+                await _trackerService.FlushHitBufferAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to flush endpoint hits to Redis. Buffered data will be retried.");
+            }
+        }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("RedisFlushHostedService stopping. Flushing final buffer...");
-        
-        // Final flush on shutdown
-        FlushBuffer();
-
-        _flushTimer?.Dispose();
-        
-        return Task.CompletedTask;
-    }
-
-    private void FlushBuffer()
-    {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            _trackerService.FlushHitBuffer();
+            await _trackerService.FlushHitBufferAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Unhandled error in RedisFlushHostedService flush timer");
+            _logger.LogError(ex, "Failed to flush the final endpoint hit buffer during shutdown.");
         }
     }
 }

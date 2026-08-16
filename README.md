@@ -1,193 +1,137 @@
 # EndpointTracker
 
-Track every ASP.NET Core endpoint automatically, expose metrics, and ship a production-ready NuGet package. This repository contains only the **EndpointTracker.AspNetCore** middleware/library and the **EndpointTracker.Example** application so you can understand, run, and publish the open-source core quickly.
+EndpointTracker is ASP.NET Core middleware that discovers mapped endpoints and reports hit counts, last-access times, and unused routes. Storage can be in memory, shared through Redis, or periodically archived from Redis to PostgreSQL or SQL Server.
 
----
+> Status: prerelease. The SQL persistence work is currently published as an alpha and should be validated against your workload before production use.
 
-## 📦 What's Inside
+## Requirements
 
-- `EndpointTracker.AspNetCore/` – the reusable middleware, services, and NuGet metadata
-- `EndpointTracker.Example/` – a minimal API that demonstrates the package end-to-end
+- .NET 10 SDK and ASP.NET Core 10
+- Redis when using distributed or SQL-backed tracking
+- PostgreSQL or SQL Server when SQL persistence is enabled
 
----
+## Projects
 
-## 🚀 Quick Start
+- `EndpointTracker.AspNetCore/` — middleware and NuGet package
+- `EndpointTracker.Example/` — runnable minimal API
+- `EndpointTracker.Tests/` — automated tests
 
-### 1. Install the package
-```bash
-dotnet add package EndpointTracker.AspNetCore
-```
+## Install
 
-### 2. Register services
-```csharp
+While the SQL feature remains prerelease:
+
+~~~bash
+dotnet add package EndpointTracker.AspNetCore --prerelease
+~~~
+
+## In-memory quick start
+
+~~~csharp
 using EndpointTracker.AspNetCore.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
-
 builder.Services.AddEndpointTracker();
-```
 
-### 3. Configure middleware, endpoints, and metrics
-```csharp
 var app = builder.Build();
 
 app.UseEndpointTracker();
 
 app.MapGet("/api/users", () => Results.Ok(new[] { "Alice", "Bob" }));
-app.MapGet("/api/products/{id}", (int id) => Results.Ok($"Product {id}"));
+app.MapEndpointTrackerMetrics(isAuthRequired: false); // local quick start only
 
-app.MapEndpointTrackerMetrics();
+app.Run();
+~~~
 
-app.UseEndpointTrackerRegistration(); // MUST be last
-```
+Endpoint discovery is automatic after startup. `MapEndpointTrackerMetrics()` requires authorization by default; the quick start disables it only so the sample can run without an authentication scheme.
 
-### 4. Run & test
-```bash
-dotnet run
+## Redis
 
-curl http://localhost:5000/api/users
-curl http://localhost:5000/metrics/endpoints
-curl http://localhost:5000/metrics/unused
-```
+Redis shares metrics across application instances and is required by the optional SQL persistence layer. Standalone and Sentinel-managed Redis deployments are supported. Redis Cluster is rejected because durable transfers use multi-key atomic scripts.
 
-### 5. Programmatic access
-```csharp
-app.MapGet("/health/api-coverage", (IEndpointTrackerService tracker) =>
+~~~csharp
+using EndpointTracker.AspNetCore.Extensions;
+using StackExchange.Redis;
+
+var redis = ConnectionMultiplexer.Connect(
+    builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Redis is not configured."));
+
+builder.Services.AddEndpointTrackerRedis(redis, options =>
 {
-    var metrics = tracker.GetMetrics();
-    var coverage = (double)metrics.UsedEndpoints / metrics.TotalEndpoints * 100;
-
-    return Results.Ok(new
-    {
-        TotalEndpoints = metrics.TotalEndpoints,
-        CoveragePercent = coverage,
-        UnusedCount = metrics.UnusedEndpoints
-    });
+    options.RedisDatabase = 0;
+    options.RedisKeyPrefix = "my-api:endpoint-tracker:";
+    options.FlushIntervalMs = 1000;
 });
-```
+~~~
 
-### 6. Production tips
-```csharp
-app.MapEndpointTrackerMetrics()
-   .RequireAuthorization("MetricsReader");
-```
+See [the Redis guide](EndpointTracker.AspNetCore/REDIS.md) for configuration and operational notes.
 
-```csharp
-app.MapGet("/metrics/export", (IEndpointTrackerService tracker) =>
+## Optional SQL persistence
+
+SQL persistence is opt-in and works with Redis. On startup, EndpointTracker creates the configured metrics table plus `_Batches` and `_State` companion tables when they do not exist. At the configured interval, it moves accumulated Redis metrics to SQL; reads combine persisted SQL data with current Redis data. Instances sharing a Redis prefix coordinate persistence and reset operations through a renewable Redis lease. The singleton `_State` row provides monotonic fencing, preventing an expired worker from committing after a newer reset or transfer.
+
+~~~csharp
+builder.Services.AddEndpointTrackerRedis(redis, options =>
 {
-    var metrics = tracker.GetMetrics();
-    // Export to Prometheus, AppInsights, etc.
+    options.UseSqlPersistence = true;
+    options.SqlProvider = "PostgreSQL"; // or "SqlServer"
+    options.SqlConnectionString =
+        builder.Configuration.GetConnectionString("EndpointTrackerSql");
+    options.SqlPersistIntervalMinutes = 10;
+    options.SqlTableName = "EndpointTrackerMetrics";
 });
-```
+~~~
 
----
+`SqlPersistIntervalMinutes` defaults to 10. SQL persistence cannot be enabled without Redis. SQL-backed endpoint patterns are limited to 450 characters; display names and HTTP method values are truncated to their database limits of 1,024 and 50 characters. When SQL mode starts, preexisting Redis endpoints over the pattern limit are rejected and their unsupported Redis data is cleaned up. Put database credentials in user secrets, environment variables, or a secret manager—not in a committed settings file.
 
-## 📊 Metrics Endpoints
+See [the SQL persistence guide](EndpointTracker.AspNetCore/READMEs/SqlPersistenceExample.md) for both providers and local Docker examples.
 
-| Endpoint | Description |
+## Metrics
+
+| Route | Description |
 | --- | --- |
-| `GET /metrics/endpoints` | Total endpoints, used vs unused, per-endpoint hit counts, last accessed timestamps |
-| `GET /metrics/unused` | Routes that have never been called so you can remove dead code |
+| `GET /metrics/endpoints` | Totals and per-endpoint usage |
+| `GET /metrics/unused` | Endpoints whose hit count is zero |
 
-**Use cases**
-- Monitor API usage
-- Identify dead code
-- Analyze traffic patterns
-- Verify test coverage
-- Auto-discover documented routes
+You can also inject `IEndpointTrackerService`:
 
----
-
-## 🧱 Package Architecture
-
-```
-EndpointTracker.AspNetCore/
-├── Models/
-│   ├── EndpointUsageInfo.cs          # Data model for endpoint statistics
-│   └── EndpointMetricsResponse.cs    # Response model for metrics API
-├── Services/
-│   ├── IEndpointTrackerService.cs    # Service interface
-│   └── EndpointTrackerService.cs     # Thread-safe tracking implementation
-├── Middleware/
-│   └── EndpointTrackerMiddleware.cs  # Request interception middleware
-├── Extensions/
-│   ├── ServiceCollectionExtensions.cs    # DI registration
-│   └── ApplicationBuilderExtensions.cs   # Middleware & endpoint mapping
-├── README.md                          # Package documentation
-└── EndpointTracker.AspNetCore.csproj # Project configuration with NuGet metadata
-```
-
-### Models
-- **EndpointUsageInfo** – route pattern, display name, HTTP method(s), hit count, registration time, last access time
-- **EndpointMetricsResponse** – total endpoints, used/unused counts, total requests, list of `EndpointUsageInfo`
-
-### Services
-`IEndpointTrackerService` + `EndpointTrackerService`
-- Thread-safe `ConcurrentDictionary<string, EndpointUsageInfo>`
-- `Interlocked.Increment` for atomic counters
-- Singleton lifetime to retain metrics throughout the app
-- Methods: `RegisterEndpoint`, `RecordHit`, `GetAllEndpointUsage`, `GetUnusedEndpoints`, `GetMetrics`, `Reset`
-
-### Middleware
-`EndpointTrackerMiddleware`
-1. Calls `_next(context)`
-2. Reads the matched `RouteEndpoint`
-3. Builds a pattern (`HTTP_METHOD route_pattern`)
-4. Calls `_trackerService.RecordHit(pattern)`
-
-### Extensions
-- `services.AddEndpointTracker()`
-- `app.UseEndpointTracker()` (after routing)
-- `app.MapEndpointTrackerMetrics()` (adds `/metrics/endpoints` & `/metrics/unused` with Swagger metadata)
-- `app.UseEndpointTrackerRegistration()` (call after all endpoint mappings)
-
----
-
-## 🧪 Example Application
-```bash
-cd EndpointTracker.Example
-dotnet run
-
-curl http://localhost:5000/api/users
-curl http://localhost:5000/weatherforecast
-curl http://localhost:5000/metrics/endpoints
-curl http://localhost:5000/metrics/unused
-```
-
----
-## ⚙️ Production Considerations
-- Secure metrics endpoints (authorization, firewall rules)
-- Default storage is in-memory per instance; implement a custom `IEndpointTrackerService` (Redis, SQL, etc.) for distributed systems
-- Middleware overhead ≈ 0.1ms per request and ≈1KB RAM per endpoint
-
-### Custom implementations
-```csharp
-public class RedisEndpointTrackerService : IEndpointTrackerService
-{
-    private readonly IConnectionMultiplexer _redis;
-    // ...
-}
-
-builder.Services.AddSingleton<IEndpointTrackerService, RedisEndpointTrackerService>();
-```
-
-```csharp
-app.MapGet("/metrics/export", (IEndpointTrackerService tracker) =>
+~~~csharp
+app.MapGet("/internal/endpoint-coverage", (IEndpointTrackerService tracker) =>
 {
     var metrics = tracker.GetMetrics();
-    return ExportToMonitoringSystem(metrics);
+    return Results.Ok(metrics);
 });
-```
+~~~
 
----
+Protect metrics routes in deployed applications because route names and traffic data can reveal internal behavior.
 
-## 🧰 Troubleshooting
-- Ensure `UseEndpointTracker()` runs after routing middleware
-- Call `UseEndpointTrackerRegistration()` after all `MapX()` calls so every endpoint is discovered
-- Built-in service is thread-safe; confirm the same if you replace it
+## Run the example
 
----
+Start Redis, then run:
 
-## 🛡️ License & Support
-- MIT License
-- Questions? Open an issue in this repository
+~~~bash
+docker run --detach --name endpointtracker-redis --publish 6379:6379 --memory 128m redis:7-alpine
+dotnet run --project EndpointTracker.Example
+~~~
+
+Try:
+
+~~~bash
+curl http://localhost:5288/weatherforecast
+curl http://localhost:5288/metrics/endpoints
+curl http://localhost:5288/metrics/unused
+~~~
+
+The actual HTTP port is printed by `dotnet run` and may differ if the launch profile changes.
+
+## Build and test
+
+~~~bash
+dotnet restore EndpointTracker.sln
+dotnet build EndpointTracker.sln --configuration Release --no-restore
+dotnet test EndpointTracker.Tests/EndpointTracker.Tests.csproj --configuration Release --no-build --no-restore
+~~~
+
+## License
+
+MIT. Please use GitHub issues for bugs and feature requests.

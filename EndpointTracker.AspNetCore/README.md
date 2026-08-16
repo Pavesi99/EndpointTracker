@@ -3,277 +3,178 @@
 [![NuGet](https://img.shields.io/nuget/v/EndpointTracker.AspNetCore.svg)](https://www.nuget.org/packages/EndpointTracker.AspNetCore/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A production-ready ASP.NET Core 8.0 middleware package that tracks API endpoint usage, counts hits, records access timestamps, and identifies unused endpoints. Perfect for monitoring, analytics, and identifying dead code in your APIs.
+EndpointTracker discovers ASP.NET Core endpoints and tracks hit counts, last-access times, and unused routes. It supports in-memory storage, Redis for shared metrics, and optional persistence from Redis to PostgreSQL or SQL Server.
 
-## Features
+> The SQL persistence release is currently alpha. Validate it in a staging environment before relying on it for production telemetry.
 
-- **Automatic Endpoint Discovery** - Captures all mapped endpoints at startup
-- **Thread-Safe Tracking** - Uses `ConcurrentDictionary` and atomic operations for high-performance concurrent access
-- **Hit Counting** - Tracks how many times each endpoint has been accessed
-- **Timestamp Tracking** - Records last access time for each endpoint
-- **Unused Endpoint Detection** - Easily identify endpoints that have never been called
-- **Built-in Metrics API** - Exposes `/metrics/endpoints` and `/metrics/unused` routes
-- **Zero Configuration** - Works out of the box with minimal setup
-- **Production Ready** - Fully documented with XML comments, optimized for performance
+## Requirements
+
+- .NET 10
+- Redis for Redis mode and SQL persistence
+- PostgreSQL or SQL Server only when SQL persistence is enabled
 
 ## Installation
 
-```bash
-dotnet add package EndpointTracker.AspNetCore
-```
+~~~bash
+dotnet add package EndpointTracker.AspNetCore --prerelease
+~~~
 
-## Quick Start
+The prerelease switch is needed while the SQL support is published as an alpha.
 
-### 1. Register the Service
+## In-memory setup
 
-```csharp
+~~~csharp
 using EndpointTracker.AspNetCore.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Register EndpointTracker
 builder.Services.AddEndpointTracker();
 
 var app = builder.Build();
-```
 
-### 2. Add Middleware
-
-```csharp
-// Must be after UseRouting() (implicit in minimal APIs)
 app.UseEndpointTracker();
-```
 
-### 3. Map Your Endpoints
-
-```csharp
-app.MapGet("/api/users", () => Results.Ok(new[] { "User1", "User2" }))
+app.MapGet("/api/users", () => Results.Ok(new[] { "Alice", "Bob" }))
    .WithName("GetUsers");
 
-app.MapGet("/api/products/{id}", (int id) => Results.Ok($"Product {id}"))
-   .WithName("GetProduct");
-```
-
-### 4. Add Metrics Endpoints & Register
-
-```csharp
-// Add metrics routes
-app.MapEndpointTrackerMetrics();
-
-// Register all endpoints (must be AFTER all MapX calls)
-app.UseEndpointTrackerRegistration();
-
+app.MapEndpointTrackerMetrics(isAuthRequired: false); // local quick start only
 app.Run();
-```
+~~~
 
-## Complete Example
+Endpoint discovery runs automatically after application startup. The manual `UseEndpointTrackerRegistration()` extension remains available, but normal applications do not need to call it.
 
-```csharp
+`MapEndpointTrackerMetrics()` protects the metrics routes with authorization by default. The quick start disables it only so the sample can run without an authentication scheme. In a deployed application, configure authentication and use the default.
+
+## Redis setup
+
+~~~csharp
 using EndpointTracker.AspNetCore.Extensions;
+using StackExchange.Redis;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+var redis = ConnectionMultiplexer.Connect(
+    builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("Redis is not configured."));
 
-// Step 1: Add EndpointTracker service
-builder.Services.AddEndpointTracker();
-
-var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
+builder.Services.AddEndpointTrackerRedis(redis, options =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    options.RedisDatabase = 0;
+    options.RedisKeyPrefix = "my-api:endpoint-tracker:";
+    options.FlushIntervalMs = 1000;
+});
+~~~
 
-// Step 2: Use tracking middleware
-app.UseEndpointTracker();
+Redis mode buffers request hits in the application and flushes them periodically. Reads include both the current buffer and Redis values. Standalone and Sentinel-managed Redis deployments are supported. Redis Cluster is rejected during tracker construction because durable transfers depend on multi-key atomic scripts.
 
-// Step 3: Map your endpoints
-app.MapGet("/api/users", () => Results.Ok(new { Users = new[] { "Alice", "Bob" } }))
-   .WithName("GetUsers");
+For configuration, key layout, and operating guidance, see the [Redis guide](https://github.com/Pavesi99/EndpointTracker/blob/master/EndpointTracker.AspNetCore/REDIS.md).
 
-app.MapGet("/api/users/{id}", (int id) => Results.Ok(new { Id = id, Name = $"User{id}" }))
-   .WithName("GetUserById");
+## Redis with optional SQL persistence
 
-app.MapPost("/api/users", (object user) => Results.Created("/api/users/123", user))
-   .WithName("CreateUser");
+SQL persistence is disabled by default and is supported only with Redis mode:
 
-// Step 4: Map metrics endpoints
-app.MapEndpointTrackerMetrics();
+~~~csharp
+builder.Services.AddEndpointTrackerRedis(redis, options =>
+{
+    options.UseSqlPersistence = true;
+    options.SqlProvider = "PostgreSQL"; // or "SqlServer"
+    options.SqlConnectionString =
+        builder.Configuration.GetConnectionString("EndpointTrackerSql");
+    options.SqlPersistIntervalMinutes = 10;
+    options.SqlTableName = "EndpointTrackerMetrics";
+});
+~~~
 
-// Step 5: Register all endpoints with tracker
-app.UseEndpointTrackerRegistration();
+At startup, the package validates the SQL configuration and creates the metrics table plus `_Batches` and `_State` companion tables if needed. On each persistence cycle it transfers accumulated metrics from Redis to SQL. Metrics reads combine SQL history with current Redis data. The interval defaults to 10 minutes. Across instances that share a Redis prefix, a renewable Redis lease serializes SQL persistence and reset operations; losing the lease cancels the active transfer so another instance can safely continue. The singleton `_State` row stores the latest monotonic fence token, preventing an expired or stale worker from committing after a newer reset or transfer.
 
-app.Run();
-```
+SQL persistence accepts endpoint patterns up to 450 characters. Longer patterns are logged and are not tracked. When SQL mode starts, preexisting overlong endpoint patterns are removed from active Redis metadata, hit, and last-access data so they cannot block later batches. Display names longer than 1,024 characters and HTTP method values longer than 50 characters are truncated before persistence.
+
+Supported provider values:
+
+| Provider | `SqlProvider` value |
+| --- | --- |
+| PostgreSQL | `PostgreSQL` or `Postgres` |
+| SQL Server | `SqlServer` |
+
+Store the connection string outside source control:
+
+~~~bash
+# PostgreSQL example
+export ConnectionStrings__EndpointTrackerSql='Host=localhost;Port=5432;Database=endpointtracker;Username=endpointtracker;Password=change-me'
+
+# SQL Server example
+export ConnectionStrings__EndpointTrackerSql='Server=localhost,1433;Database=EndpointTracker;User Id=sa;Password=change-me;Encrypt=True;TrustServerCertificate=True'
+~~~
+
+For local containers and complete setup, see the [SQL persistence guide](https://github.com/Pavesi99/EndpointTracker/blob/master/EndpointTracker.AspNetCore/READMEs/SqlPersistenceExample.md).
+
+## Configuration reference
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `UseRedis` | `false` | Selects Redis-backed tracking |
+| `RedisConnection` | none | Required when `UseRedis` is true |
+| `RedisDatabase` | `0` | Redis logical database |
+| `RedisKeyPrefix` | `endpoint-tracker:` | Isolate applications and environments |
+| `FlushIntervalMs` | `1000` | Redis buffer flush interval; minimum 100 ms |
+| `UseSqlPersistence` | `false` | Enables periodic Redis-to-SQL transfer |
+| `SqlProvider` | none | `PostgreSQL`/`Postgres` or `SqlServer` |
+| `SqlConnectionString` | none | Required when SQL persistence is enabled |
+| `SqlPersistIntervalMinutes` | `10` | SQL transfer interval; minimum 1 minute |
+| `SqlTableName` | `EndpointTrackerMetrics` | Base name for the metrics table; `_Batches` and `_State` companion tables are also managed |
 
 ## Metrics API
 
-### GET /metrics/endpoints
+### `GET /metrics/endpoints`
 
-Returns comprehensive endpoint usage statistics:
+Returns totals plus an `endpoints` collection:
 
-```json
+~~~json
 {
-  "totalEndpoints": 10,
-  "usedEndpoints": 7,
-  "unusedEndpoints": 3,
-  "totalRequests": 1543,
+  "totalEndpoints": 2,
+  "usedEndpoints": 1,
+  "unusedEndpoints": 1,
+  "totalRequests": 3,
   "endpoints": [
     {
       "endpointPattern": "GET /api/users",
       "displayName": "GetUsers",
       "httpMethod": "GET",
-      "hitCount": 342,
-      "lastAccessedUtc": "2025-01-15T14:23:45.123Z",
-      "registeredUtc": "2025-01-15T10:00:00.000Z"
-    },
-    {
-      "endpointPattern": "GET /api/admin/settings",
-      "displayName": "GetAdminSettings",
-      "httpMethod": "GET",
-      "hitCount": 0,
-      "lastAccessedUtc": null,
-      "registeredUtc": "2025-01-15T10:00:00.000Z"
+      "hitCount": 3,
+      "lastAccessedUtc": "2026-08-15T12:00:00Z",
+      "registeredUtc": "2026-08-15T11:00:00Z"
     }
   ]
 }
-```
+~~~
 
-### GET /metrics/unused
+### `GET /metrics/unused`
 
-Returns only endpoints that have never been accessed:
+Returns endpoints whose combined hit count is zero.
 
-```json
-{
-  "count": 3,
-  "endpoints": [
-    {
-      "endpointPattern": "GET /api/admin/settings",
-      "displayName": "GetAdminSettings",
-      "httpMethod": "GET",
-      "hitCount": 0,
-      "lastAccessedUtc": null,
-      "registeredUtc": "2025-01-15T10:00:00.000Z"
-    }
-  ]
-}
-```
+## Programmatic access
 
-## Programmatic Access
+~~~csharp
+using EndpointTracker.AspNetCore.Services;
 
-Inject `IEndpointTrackerService` to access tracking data programmatically:
+app.MapGet("/internal/endpoint-metrics", (IEndpointTrackerService tracker) =>
+    Results.Ok(tracker.GetMetrics()));
+~~~
 
-```csharp
-app.MapGet("/custom-metrics", (IEndpointTrackerService tracker) =>
-{
-    var allUsage = tracker.GetAllEndpointUsage();
-    var unused = tracker.GetUnusedEndpoints();
-    var metrics = tracker.GetMetrics();
+`IEndpointTrackerService` also exposes endpoint registration, hit recording, usage queries, and reset.
 
-    return Results.Ok(new { allUsage, unused, metrics });
-});
-```
+## Middleware placement
 
-## Advanced Usage
+`UseEndpointTracker()` must run after routing has selected an endpoint and before the endpoint handler completes. In minimal APIs, place it before mapped handlers are executed as shown above.
 
-### Custom Metrics Endpoint
+## Deployment checklist
 
-```csharp
-app.MapGet("/api/health/dead-endpoints", (IEndpointTrackerService tracker) =>
-{
-    var unused = tracker.GetUnusedEndpoints();
-    if (unused.Any())
-    {
-        return Results.Json(new
-        {
-            Status = "Warning",
-            DeadEndpoints = unused.Count(),
-            Details = unused
-        });
-    }
-    return Results.Ok(new { Status = "Healthy", DeadEndpoints = 0 });
-});
-```
-
-### Reset Tracking Data
-
-```csharp
-app.MapPost("/admin/reset-metrics", (IEndpointTrackerService tracker) =>
-{
-    tracker.Reset();
-    return Results.Ok("Metrics reset successfully");
-})
-.RequireAuthorization("Admin"); // Add appropriate authorization
-```
-
-## Thread Safety
-
-All operations are thread-safe:
-- Uses `ConcurrentDictionary<string, EndpointUsageInfo>` for storing endpoint data
-- Employs `Interlocked.Increment` for atomic counter updates
-- Safe for high-concurrency scenarios
-
-## Performance Considerations
-
-- **Minimal Overhead** - Lightweight middleware adds negligible latency
-- **In-Memory Storage** - All data stored in memory (not suitable for distributed systems without external storage)
-- **Singleton Service** - Single instance maintains state across all requests
-- **No I/O Operations** - Pure in-memory operations for maximum speed
-
-## Integration with Monitoring Tools
-
-Export metrics to your monitoring system:
-
-```csharp
-// Example: Export to Prometheus, Application Insights, etc.
-app.MapGet("/metrics/prometheus", (IEndpointTrackerService tracker) =>
-{
-    var metrics = tracker.GetMetrics();
-    var prometheusFormat = FormatAsPrometheus(metrics);
-    return Results.Text(prometheusFormat, "text/plain");
-});
-```
-
-## Redis Support
-
-For complete Redis documentation (quick start, configuration, troubleshooting, and more), see **[REDIS.md](REDIS.md)**.
-
-### Quick Example
-
-```csharp
-var redis = ConnectionMultiplexer.Connect("localhost:6379");
-builder.Services.AddEndpointTrackerRedis(redis);
-```
-
-That's it! Your metrics are now distributed across instances and persistent in Redis.
-
-For all details, see [REDIS.md](REDIS.md).
-
-## Best Practices
-
-1. **Call `UseEndpointTrackerRegistration()` last** - After all `MapX()` calls to ensure all endpoints are registered
-2. **Secure metrics endpoints** - Add authentication/authorization in production
-3. **Monitor unused endpoints** - Regularly review unused endpoints for potential removal
-4. **Consider distributed scenarios** - For multi-instance deployments, use Redis support
-5. **Tune flush interval** - For high-traffic applications, adjust `FlushIntervalMs` (lower for more frequent updates, higher to reduce Redis load)
-6. **Redis persistence** - Enable Redis AOF or RDB persistence if you want metrics to survive Redis restarts
-
-## Requirements
-
-- .NET 8.0 or higher
-- ASP.NET Core 8.0
-- StackExchange.Redis 2.7+ (only required for Redis mode)
+- Require authentication and authorization for metrics routes.
+- Use different Redis key prefixes for different applications and environments.
+- Use standalone or Sentinel-managed Redis; Redis Cluster is not supported.
+- Store Redis and SQL credentials in a secret store.
+- Enable appropriate Redis durability if Redis-only history must survive restarts.
+- Monitor Redis and database connectivity and EndpointTracker error logs.
+- Validate schema permissions: the SQL login needs permission to create and access all three persistence tables.
+- Exercise persistence, shutdown, and recovery behavior under realistic load before production rollout.
 
 ## License
 
-This project is licensed under the MIT License.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues, questions, or contributions, please visit the [GitHub repository](https://github.com/Pavesi99/EndpointTracker).
+MIT. Issues and contributions are welcome in the [GitHub repository](https://github.com/Pavesi99/EndpointTracker).

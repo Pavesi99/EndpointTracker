@@ -3,17 +3,19 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 
 namespace EndpointTracker.AspNetCore.Internal;
 
 /// <summary>
 /// Hosted service that registers all mapped endpoints with the tracker after application startup.
 /// </summary>
-internal class EndpointRegistrationHostedService : IHostedService
+internal sealed class EndpointRegistrationHostedService : IHostedService, IDisposable
 {
     private readonly IEndpointTrackerService _trackerService;
     private readonly EndpointDataSource _endpointDataSource;
     private readonly ILogger<EndpointRegistrationHostedService> _logger;
+    private IDisposable? _changeSubscription;
 
     public EndpointRegistrationHostedService(
         IEndpointTrackerService trackerService,
@@ -27,19 +29,22 @@ internal class EndpointRegistrationHostedService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // Register a callback for when endpoints change
         RegisterEndpoints();
-
-        // Also listen for changes (in case endpoints are added dynamically)
-        _endpointDataSource.GetChangeToken().RegisterChangeCallback(_ => RegisterEndpoints(), null);
+        _changeSubscription = ChangeToken.OnChange(
+            _endpointDataSource.GetChangeToken,
+            RegisterEndpoints);
 
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        _changeSubscription?.Dispose();
+        _changeSubscription = null;
         return Task.CompletedTask;
     }
+
+    public void Dispose() => _changeSubscription?.Dispose();
 
     private void RegisterEndpoints()
     {
