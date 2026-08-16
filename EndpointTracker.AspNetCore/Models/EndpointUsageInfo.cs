@@ -23,7 +23,7 @@ public class EndpointUsageInfo
     /// <summary>
     /// Gets or sets the number of times this endpoint has been accessed.
     /// </summary>
-    public int HitCount { get; set; }
+    public long HitCount { get; set; }
 
     /// <summary>
     /// Gets or sets the timestamp of the last access to this endpoint.

@@ -7,11 +7,11 @@
 
         <!-- NuGet Package Metadata -->
         <PackageId>EndpointTracker.AspNetCore</PackageId>
-        <Version>1.0.5</Version>
+        <Version>1.0.6-alpha</Version>
         <Authors>Vilmar Pavesi</Authors>
         <Company>Vilmar Pavesi</Company>
-        <Description>ASP.NET Core middleware for tracking API endpoint usage, hit counts, and identifying unused endpoints. Production-ready solution for monitoring endpoint analytics.</Description>
-        <PackageTags>aspnetcore;middleware;endpoint-tracking;metrics;monitoring;analytics</PackageTags>
+        <Description>ASP.NET Core middleware for tracking API endpoint usage with in-memory, Redis, and optional SQL persistence.</Description>
+        <PackageTags>aspnetcore;middleware;endpoint-tracking;metrics;monitoring;analytics;redis;postgresql;sql-server</PackageTags>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <RepositoryUrl>https://github.com/Pavesi99/EndpointTracker</RepositoryUrl>
         <PackageProjectUrl>https://github.com/Pavesi99/EndpointTracker</PackageProjectUrl>
@@ -26,9 +26,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
-        <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
-        <PackageReference Include="Npgsql" Version="7.1.2" />
+        <PackageReference Include="StackExchange.Redis" Version="3.1.13" />
+        <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+        <PackageReference Include="Npgsql" Version="10.0.3" />
     </ItemGroup>
 
     <ItemGroup>

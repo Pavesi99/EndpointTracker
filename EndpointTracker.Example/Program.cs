@@ -4,8 +4,6 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 
@@ -15,29 +13,27 @@ builder.Services.AddAuthorization();
 
 // ENDPOINTRACKER
 // Register EndpointTracker service with optional SQL persistence via configuration
-var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+    ?? throw new InvalidOperationException("ConnectionStrings:Redis must be configured.");
 var redis = ConnectionMultiplexer.Connect(redisConnectionString);
+var endpointTrackerConfiguration = builder.Configuration.GetSection("EndpointTracker");
 
 builder.Services.AddEndpointTracker(options =>
 {
     options.UseRedis = true;
     options.RedisConnection = redis;
-    options.RedisDatabase = int.Parse(builder.Configuration["EndpointTracker:RedisDatabase"] ?? "0");
-    options.RedisKeyPrefix = builder.Configuration["EndpointTracker:RedisKeyPrefix"] ?? "endpoint-tracker:";
-    options.UseSqlPersistence = bool.Parse(builder.Configuration["EndpointTracker:UseSqlPersistence"] ?? "false");
-    options.SqlProvider = builder.Configuration["EndpointTracker:SqlProvider"];
-    options.SqlConnectionString = builder.Configuration["EndpointTracker:SqlConnectionString"];
-    options.SqlPersistIntervalMinutes = int.Parse(builder.Configuration["EndpointTracker:SqlPersistIntervalMinutes"] ?? "10");
+    options.RedisDatabase = endpointTrackerConfiguration.GetValue("RedisDatabase", 0);
+    options.RedisKeyPrefix = endpointTrackerConfiguration["RedisKeyPrefix"] ?? "endpoint-tracker:";
+    options.UseSqlPersistence = endpointTrackerConfiguration.GetValue("UseSqlPersistence", false);
+    options.SqlProvider = endpointTrackerConfiguration["SqlProvider"];
+    options.SqlConnectionString = builder.Configuration.GetConnectionString("EndpointTrackerSql");
+    options.SqlPersistIntervalMinutes = endpointTrackerConfiguration.GetValue("SqlPersistIntervalMinutes", 10);
+    options.SqlTableName = endpointTrackerConfiguration["SqlTableName"] ?? "EndpointTrackerMetrics";
 });
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseHttpsRedirection();
@@ -63,8 +59,7 @@ app.MapGet("/weatherforecast", () =>
         .ToArray();
     return forecast;
 })
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+.WithName("GetWeatherForecast");
 
 app.MapGet("/api/users", () =>
 {
@@ -75,40 +70,35 @@ app.MapGet("/api/users", () =>
     });
 })
 .WithName("GetUsers")
-.WithTags("Users")
-.WithOpenApi();
+.WithTags("Users");
 
 app.MapGet("/api/users/{id:int}", (int id) =>
 {
     return Results.Ok(new { Id = id, Name = $"User {id}" });
 })
 .WithName("GetUserById")
-.WithTags("Users")
-.WithOpenApi();
+.WithTags("Users");
 
 app.MapPost("/api/users", (object user) =>
 {
     return Results.Created($"/api/users/123", user);
 })
 .WithName("CreateUser")
-.WithTags("Users")
-.WithOpenApi();
+.WithTags("Users");
 
 app.MapPut("/api/users/{id:int}", (int id, object user) =>
 {
     return Results.NoContent();
 })
 .WithName("UpdateUser")
-.WithTags("Users")
-.WithOpenApi();
+.WithTags("Users");
 
 app.MapDelete("/api/users/{id:int}", (int id) =>
 {
     return Results.NoContent();
 })
 .WithName("DeleteUser")
-.WithTags("Users")
-.WithOpenApi();
+.WithTags("Users");
 
 // This endpoint will likely remain unused in testing
 app.MapGet("/api/admin/settings", () =>
@@ -116,8 +106,7 @@ app.MapGet("/api/admin/settings", () =>
     return Results.Ok(new { Setting1 = "Value1", Setting2 = "Value2" });
 })
 .WithName("GetAdminSettings")
-.WithTags("Admin")
-.WithOpenApi();
+.WithTags("Admin");
 
 // ENDPOINTRACKER 
 // Map the endpoint tracker metrics routes
