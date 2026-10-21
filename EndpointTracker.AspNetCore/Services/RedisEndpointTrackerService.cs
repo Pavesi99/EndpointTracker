@@ -421,14 +421,10 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
             return;
 
         var now = EnsureUtc(UtcNow);
-        // Establish the reset epoch before accepting the hit. This deliberately happens
-        // before the local lock: if a reset completes before RecordHit starts, its fence
-        // is observed and the new hit cannot be discarded as stale on the next flush.
-        var currentResetFence = ReadResetFence();
+        // Keep request tracking entirely local. Flushes and metric reads reconcile
+        // remote resets; hits buffered before that reconciliation may be discarded.
         lock (_hitBufferLock)
         {
-            ReconcileResetFenceCore(currentResetFence);
-
             if (!_endpointMetadata.ContainsKey(endpointPattern) &&
                 !RegisterEndpointCore(endpointPattern, null, null))
             {
@@ -628,25 +624,26 @@ public class RedisEndpointTrackerService : IEndpointTrackerService
         await _flushLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            lock (_hitBufferLock)
-            {
-                if (!_hitBuffer.IsEmpty || !_metadataWriteBuffer.IsEmpty)
-                {
-                    _pendingFlushBatches.Enqueue(new BufferedFlushBatch(
-                        Guid.NewGuid().ToString("N"),
-                        _hitBuffer,
-                        _metadataWriteBuffer,
-                        _observedResetFence));
-                    _hitBuffer = new ConcurrentDictionary<string, BufferedHit>(StringComparer.Ordinal);
-                    _metadataWriteBuffer = new ConcurrentDictionary<string, EndpointUsageInfo>(StringComparer.Ordinal);
-                }
-            }
-
+            var capturedNewBatch = false;
             while (true)
             {
                 BufferedFlushBatch? batch;
                 lock (_hitBufferLock)
+                {
+                    // Retry the same batch before capturing new hits. During outages,
+                    // retain one retry batch plus one active aggregate per endpoint.
+                    if (_pendingFlushBatches.Count == 0 && !capturedNewBatch &&
+                        (!_hitBuffer.IsEmpty || !_metadataWriteBuffer.IsEmpty))
+                    {
+                        _pendingFlushBatches.Enqueue(new BufferedFlushBatch(
+                            Guid.NewGuid().ToString("N"), _hitBuffer,
+                            _metadataWriteBuffer, _observedResetFence));
+                        _hitBuffer = new ConcurrentDictionary<string, BufferedHit>(StringComparer.Ordinal);
+                        _metadataWriteBuffer = new ConcurrentDictionary<string, EndpointUsageInfo>(StringComparer.Ordinal);
+                        capturedNewBatch = true;
+                    }
                     batch = _pendingFlushBatches.Count == 0 ? null : _pendingFlushBatches.Peek();
+                }
 
                 if (batch == null)
                     return;

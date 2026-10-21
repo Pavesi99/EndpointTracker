@@ -46,7 +46,7 @@ builder.Services.AddEndpointTrackerRedis(redis, options =>
 {
     options.RedisDatabase = 0;
     options.RedisKeyPrefix = "my-api:endpoint-tracker:";
-    options.FlushIntervalMs = 1000;
+    options.FlushIntervalMs = 5000;
 });
 
 var app = builder.Build();
@@ -70,7 +70,7 @@ Endpoint registration is automatic. In deployed applications, omit `isAuthRequir
   "EndpointTracker": {
     "RedisDatabase": 0,
     "RedisKeyPrefix": "my-api:endpoint-tracker:",
-    "FlushIntervalMs": 1000
+    "FlushIntervalMs": 5000
   }
 }
 ~~~
@@ -86,7 +86,7 @@ builder.Services.AddEndpointTrackerRedis(redis, options =>
     options.RedisDatabase = section.GetValue("RedisDatabase", 0);
     options.RedisKeyPrefix =
         section["RedisKeyPrefix"] ?? "endpoint-tracker:";
-    options.FlushIntervalMs = section.GetValue("FlushIntervalMs", 1000);
+    options.FlushIntervalMs = section.GetValue("FlushIntervalMs", 5000);
 });
 ~~~
 
@@ -102,7 +102,7 @@ export ConnectionStrings__Redis='redis.example.com:6380,password=replace-me,ssl=
 | --- | --- | --- |
 | `RedisDatabase` | `0` | Redis logical database |
 | `RedisKeyPrefix` | `endpoint-tracker:` | Prefix applied to all tracker data |
-| `FlushIntervalMs` | `1000` | Buffer flush interval; must be at least 100 ms |
+| `FlushIntervalMs` | `5000` | Buffer flush interval; must be at least 100 ms |
 
 Use a unique prefix for each application and environment. Sharing both the Redis database and prefix intentionally combines their metrics.
 
@@ -222,3 +222,7 @@ builder.Services.AddEndpointTracker();
 ~~~
 
 In-memory metrics belong to one process and are lost when that process stops.
+
+### Buffered Redis tracking
+
+Request tracking updates memory only; it does not query Redis per hit. Buffered increments are flushed every 5 seconds by default (`FlushIntervalMs`). Each instance keeps its own buffer. Remote resets are observed during flushes or metrics reads, so hits buffered before an instance observes a reset may be discarded, including hits received shortly after that reset. Abrupt process termination may lose unflushed hits; graceful shutdown attempts a final flush. During Redis outages, one retry batch is retained and subsequent hits are aggregated locally per endpoint instead of adding batches indefinitely. Memory remains proportional to the number of distinct endpoint patterns, not a fixed byte limit. These are approximate operational metrics, not an audit or billing ledger.

@@ -120,10 +120,13 @@ public class RedisIntegrationTests
             staleWriter.RecordHit(endpointPattern);
 
             resetter.ClearRedisData();
+            // Until background reconciliation observes the reset, even a new hit
+            // belongs to the locally cached old epoch and may be discarded.
+            staleWriter.RecordHit(endpointPattern);
+            staleWriter.FlushHitBuffer();
             var immediatelyAfterReset = Assert.Single(staleWriter.GetAllEndpointUsage());
             Assert.Equal(0L, immediatelyAfterReset.HitCount);
-            // A hit accepted after ClearRedisData returns must be assigned to the new
-            // reset epoch rather than being discarded with the pre-reset buffered hit.
+            // Once reconciliation completes, subsequent hits use the new epoch.
             staleWriter.RecordHit(endpointPattern);
             staleWriter.FlushHitBuffer();
 

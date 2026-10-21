@@ -60,7 +60,7 @@ builder.Services.AddEndpointTrackerRedis(redis, options =>
 {
     options.RedisDatabase = 0;
     options.RedisKeyPrefix = "my-api:endpoint-tracker:";
-    options.FlushIntervalMs = 1000;
+    options.FlushIntervalMs = 5000;
 });
 ~~~
 
@@ -135,3 +135,7 @@ dotnet test EndpointTracker.Tests/EndpointTracker.Tests.csproj --configuration R
 ## License
 
 MIT. Please use GitHub issues for bugs and feature requests.
+
+### Buffered Redis tracking
+
+Request tracking updates memory only; it does not query Redis per hit. Buffered increments are flushed every 5 seconds by default (`FlushIntervalMs`). Each instance keeps its own buffer. Remote resets are observed during flushes or metrics reads, so hits buffered before an instance observes a reset may be discarded, including hits received shortly after that reset. Abrupt process termination may lose unflushed hits; graceful shutdown attempts a final flush. During Redis outages, one retry batch is retained and subsequent hits are aggregated locally per endpoint instead of adding batches indefinitely. Memory remains proportional to the number of distinct endpoint patterns, not a fixed byte limit. These are approximate operational metrics, not an audit or billing ledger.

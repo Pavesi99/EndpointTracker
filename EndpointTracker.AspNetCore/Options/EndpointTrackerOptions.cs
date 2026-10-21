@@ -27,9 +27,10 @@ public class EndpointTrackerOptions
 
     /// <summary>
     /// Gets or sets the flush interval in milliseconds for the Redis buffer.
-    /// Default is 1000ms.
+    /// Default is 5000ms. Buffered metrics may be lost on abrupt process termination.
+    /// Remote resets are reconciled during flushes or metric reads, not per request.
     /// </summary>
-    public int FlushIntervalMs { get; set; } = 1000;
+    public int FlushIntervalMs { get; set; } = 5000;
 
     /// <summary>
     /// Gets or sets the key prefix for Redis keys.
