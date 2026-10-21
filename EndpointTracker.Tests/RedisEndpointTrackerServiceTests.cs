@@ -18,6 +18,49 @@ public class RedisEndpointTrackerServiceTests
     private const string KeyPrefix = "test-endpoint-tracker:";
 
     [Fact]
+    public void RecordHit_ConcurrentRequestsNeverAccessRedis()
+    {
+        var (service, database) = CreateService();
+        database.ClearReceivedCalls();
+
+        Parallel.For(0, 10_000, _ => service.RecordHit(EndpointPattern));
+
+        Assert.Empty(database.ReceivedCalls());
+        Assert.Equal(10_000L, Assert.Single(service.GetAllEndpointUsage()).HitCount);
+    }
+
+    [Fact]
+    public void FlushHitBuffer_RepeatedFailuresKeepOneRetryBatchAndAggregateNewHits()
+    {
+        var (service, database) = CreateService();
+        var capturedBatchIds = new List<string>();
+        ConfigureFencedScripts(database, (keys, _) =>
+        {
+            capturedBatchIds.Add(keys[0].ToString());
+            return Task.FromException<RedisResult>(new RedisException("Unavailable"));
+        });
+
+        for (var i = 0; i < 20; i++)
+        {
+            service.RecordHit(EndpointPattern);
+            Assert.Throws<RedisException>(service.FlushHitBuffer);
+        }
+
+        Assert.Single(capturedBatchIds.Distinct());
+        Assert.Equal(20L, Assert.Single(service.GetAllEndpointUsage()).HitCount);
+
+        var batchSizes = new List<long>();
+        ConfigureFencedScripts(database, (_, values) =>
+        {
+            batchSizes.Add((long)values[3]);
+            return Task.FromResult(RedisResult.Create((RedisValue)1L));
+        });
+        service.FlushHitBuffer();
+        service.FlushHitBuffer();
+        Assert.Equal(new long[] { 1, 19 }, batchSizes);
+    }
+
+    [Fact]
     public void RedisOnlyConstructor_TracksHitsWithoutSqlStore()
     {
         var (service, _) = CreateService();
